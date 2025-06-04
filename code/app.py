@@ -1,16 +1,15 @@
-import streamlit as st  # This brings in the Streamlit library so we can build the web app
+# Import statements
+import streamlit as st
 import fitz  # This is PyMuPDF, used to open and read text from PDF files
 
-# Set up the web app’s title, icon, and layout style
+# Set up the app’s title, icon, and layout style
 st.set_page_config(page_title="AI Knowledge Auditor", page_icon="🧠", layout="centered")
 
-# Main title at the top of the app
 st.title("🧠 AI Knowledge Auditor")
 
 # Small helpful instruction just below the title
 st.caption("Upload a PDF, then ask a question about its content.")
 
-# Check if we already have a message list stored; if not, make an empty one
 # This helps us keep track of the whole chat (user questions + assistant replies)
 if "messages" not in st.session_state:
     st.session_state.messages = []

@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+env/
+ENV/
+*.env
+
+# PyMuPDF temp cache
+*.xoj
+*.pdf~
+
+# Jupyter Notebook checkpoints (if any)
+.ipynb_checkpoints/
+
+# Streamlit cache
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# VS Code
+.vscode/
+
+# Mac/Linux system files
+.DS_Store
+Thumbs.db
+
+# Hugging Face model cache (optional)
+~/.cache/huggingface/

@@ -52,14 +52,14 @@ def get_keywords(text):
     return [word for word in tokens if word.isalnum() and word not in stop_words]
 
 if "embed_model" not in st.session_state:
-    model = SentenceTransformer("all-MiniLM-L6-v2")  # Load a Pretrained Sentence transformer
+    st.session_state.embed_model = SentenceTransformer("all-MiniLM-L6-v2")  # Load a Pretrained Sentence transformer
 
 
 # Search for the best-matching chunk of PDF text based on keyword overlap
 def find_best_chunk(question, context, window=500):
     chunks = [context[i:i+window] for i in range(0, len(context), window)]
     question_emb = st.session_state.embed_model.encode([question])[0]
-    chunk_embs = st.session_state.emb_model.encode([chunks])
+    chunk_embs = st.session_state.embed_model.encode(chunks)
     scores = cosine_similarity([question_emb], chunk_embs)[0]
     best_index = int(np.argmax(scores))
     best_chunk = chunks[best_index]

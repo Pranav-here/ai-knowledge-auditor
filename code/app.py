@@ -1,4 +1,4 @@
-# AI Knowledge Auditor – MVP v1.7
+# AI Knowledge Auditor – MVP v1.8
 # A chatbot that audits answers from PDF content using keyword matching and a trust score
 
 import streamlit as st
@@ -23,15 +23,17 @@ with st.sidebar:
     st.title("📚 How It Works")
     st.markdown("""
     1. Upload a PDF  
-    2. Enter a AI generated answer
-    3. We'll highlight a relevant passage and calculate a **Trust Score**  
+    2. Enter the **question** you asked an AI model  
+    3. Enter the **answer** the model gave  
+    4. We'll highlight the most relevant passage from the PDF and calculate a **Trust Score**  
     ---
-    **Trust Score** shows how closely the answer aligns with the PDF content using semantic similarity.
+    The **Trust Score** shows how closely the model's answer aligns with the PDF content using semantic similarity.
     """)
+
 
 # App Title and Description
 st.title("🧠 AI Knowledge Auditor")
-st.caption("Upload a PDF and ask a question. We’ll evaluate the accuracy of the answer using the document.")
+st.caption("Upload a PDF and audit AI-generated answers for accuracy and relevance.")
 
 # Initialize message history in session state
 if "messages" not in st.session_state:
@@ -67,11 +69,27 @@ def find_best_chunk(question, context, window=500):
     return best_chunk, best_score
 
 
-# Highlight matching keywords in bold for visual clarity
-def highlight_keywords(chunk, keywords):
-    for kw in set(keywords):
-        chunk = re.sub(rf'\b({kw})\b', r'**\1**', chunk, flags=re.IGNORECASE)
-    return chunk
+# Highlight sentences in bold for visual clarity
+def highlight_top_sentences(chunk, model_answer):
+    sentences = nltk.sent_tokenize(chunk)  # split sentences
+    sentence_embeddings = st.session_state.embed_model.encode(sentences)  # embed the sentences
+    # compute cosine similarity between questions and each sentence
+    question_emb = st.session_state.embed_model.encode([model_answer])[0]
+    similarities = []
+    for i in range(len(sentences)):
+        sim_score = cosine_similarity([question_emb], [sentence_embeddings[i]])[0][0]
+        similarities.append((sim_score, sentences[i]))
+
+    # Sort by similarity
+    similarities.sort(reverse=True, key=lambda x: x[0])
+    top_sentences = [sent[1] for sent in similarities[:2]]
+
+
+    for sentence in top_sentences:
+        highlighted_chunk = chunk.replace(sentence, '**'+sentence+'**')
+    
+    return highlighted_chunk
+
 
 # Extract and store PDF text once per upload
 if uploaded_pdf and "pdf_text" not in st.session_state:
@@ -85,30 +103,42 @@ for msg in st.session_state.messages:
 
 # Main question-answering logic (appears after PDF is uploaded)
 if uploaded_pdf:
-    question = st.chat_input("Ask a question about the PDF...")
+    # question = st.chat_input("Ask a question about the PDF...")
 
-    if question:
-        st.session_state.messages.append({"role": "user", "content": question})  # Store user message
+    if uploaded_pdf:
+        # Initialize form inputs in session_state
+        if "form_question" not in st.session_state:
+            st.session_state.form_question = ""
+        if "form_answer" not in st.session_state:
+            st.session_state.form_answer = ""
 
-        keywords = get_keywords(question)  # Step 1: extract important keywords
-        chunk, trust_score = find_best_chunk(question, st.session_state.pdf_text)  # Step 2: find best match
+        with st.form(key="audit_form"):
+            question = st.text_input("🔍 What was the question you asked the model?", value=st.session_state.form_question, key="form_question")
+            model_answer = st.text_area("🧠 What answer did the model give?", value=st.session_state.form_answer, key="form_answer")
+            submitted = st.form_submit_button("Audit Answer")
 
-        highlighted = highlight_keywords(chunk, keywords)  # Step 3: bold matched keywords
 
-        # Step 4: Format assistant response and display in chat bubble
-        response_md = f"📘 **Answer:**\n\n{highlighted}"
+        if submitted and model_answer:
+            st.session_state.messages.append({"role": "user", "content": f"Q: {question}\nA: {model_answer}"})
 
-        with st.chat_message("assistant"):
-            st.markdown(response_md)
-            st.metric(label="Trust Score", value=f"{trust_score}%")  # Visual trust metric
+            chunk, trust_score = find_best_chunk(model_answer, st.session_state.pdf_text)
+            highlighted = highlight_top_sentences(chunk, model_answer)
 
-        # Step 5: Save assistant message with trust score to history
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": f"{response_md}\n\n📊 **Trust Score:** `{trust_score}%`"
-        })
+            response_md = f"📘 **Most Relevant Passage:**\n\n{highlighted}"
 
-        st.rerun()  # Refresh to show updated messages
+            with st.chat_message("assistant"):
+                st.markdown(response_md)
+                st.metric(label="Trust Score", value=f"{trust_score}%")
+                if trust_score < 40:
+                    st.warning("⚠️ Low trust score. The model's answer may not be well-supported by the document.")
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": f"{response_md}\n\n📊 **Trust Score:** `{trust_score}%`"
+            })
+
+            st.rerun()
+
 
 else:
     st.info("📌 Upload a PDF to get started.")

@@ -1,8 +1,8 @@
-# AI Knowledge Auditor – MVP v1.8
-# A chatbot that audits answers from PDF content using keyword matching and a trust score
+# AI Knowledge Auditor – MVP v1.9
+# A chatbot that audits answers from PDF content using combined question-answer similarity
 
 import streamlit as st
-import fitz  # PyMuPDF: Used to read text from PDFs
+import fitz  # PyMuPDF
 import nltk
 import re
 from nltk.corpus import stopwords
@@ -11,14 +11,14 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Download NLTK data required for tokenizing and stopword filtering
+# Download NLTK resources
 nltk.download('punkt')
 nltk.download('stopwords')
 
-# Configure Streamlit page layout and metadata
+# Configure page
 st.set_page_config(page_title="AI Knowledge Auditor", page_icon="🧠", layout="centered")
 
-# Sidebar with usage instructions
+# Sidebar instructions
 with st.sidebar:
     st.title("📚 How It Works")
     st.markdown("""
@@ -30,114 +30,101 @@ with st.sidebar:
     The **Trust Score** shows how closely the model's answer aligns with the PDF content using semantic similarity.
     """)
 
-
-# App Title and Description
+# Main title
 st.title("🧠 AI Knowledge Auditor")
 st.caption("Upload a PDF and audit AI-generated answers for accuracy and relevance.")
 
-# Initialize message history in session state
+# Session state for chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# PDF file uploader
+# Upload PDF
 uploaded_pdf = st.file_uploader("📄 Upload a PDF", type=["pdf"])
 
-# Extract text from all pages of a PDF using PyMuPDF
+# Extract text from PDF
 def extract_text_from_pdf(file):
     with fitz.open(stream=file.read(), filetype="pdf") as doc:
         return "\n".join(page.get_text() for page in doc)
 
-# Get keywords from a question by tokenizing and removing stopwords
+# Extract keywords (unused currently, but can help with extensions)
 def get_keywords(text):
     stop_words = set(stopwords.words("english"))
     tokens = word_tokenize(text.lower())
     return [word for word in tokens if word.isalnum() and word not in stop_words]
 
+# Load SentenceTransformer model once
 if "embed_model" not in st.session_state:
-    st.session_state.embed_model = SentenceTransformer("all-MiniLM-L6-v2")  # Load a Pretrained Sentence transformer
+    st.session_state.embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-
-# Search for the best-matching chunk of PDF text based on keyword overlap
-def find_best_chunk(question, context, window=500):
+# Combined similarity for chunk search
+def find_best_chunk(question, model_answer, context, window=500):
     chunks = [context[i:i+window] for i in range(0, len(context), window)]
     question_emb = st.session_state.embed_model.encode([question])[0]
+    answer_emb = st.session_state.embed_model.encode([model_answer])[0]
+    combined_emb = (question_emb + answer_emb) / 2
     chunk_embs = st.session_state.embed_model.encode(chunks)
-    scores = cosine_similarity([question_emb], chunk_embs)[0]
+    scores = cosine_similarity([combined_emb], chunk_embs)[0]
     best_index = int(np.argmax(scores))
     best_chunk = chunks[best_index]
     best_score = round(float(scores[best_index]) * 100, 2)
     return best_chunk, best_score
 
-
-# Highlight sentences in bold for visual clarity
+# Highlight top 2 semantically relevant sentences
 def highlight_top_sentences(chunk, model_answer):
-    sentences = nltk.sent_tokenize(chunk)  # split sentences
-    sentence_embeddings = st.session_state.embed_model.encode(sentences)  # embed the sentences
-    # compute cosine similarity between questions and each sentence
-    question_emb = st.session_state.embed_model.encode([model_answer])[0]
-    similarities = []
-    for i in range(len(sentences)):
-        sim_score = cosine_similarity([question_emb], [sentence_embeddings[i]])[0][0]
-        similarities.append((sim_score, sentences[i]))
-
-    # Sort by similarity
+    sentences = nltk.sent_tokenize(chunk)
+    sentence_embeddings = st.session_state.embed_model.encode(sentences)
+    answer_emb = st.session_state.embed_model.encode([model_answer])[0]
+    similarities = [(cosine_similarity([answer_emb], [sent_emb])[0][0], sent) for sent_emb, sent in zip(sentence_embeddings, sentences)]
     similarities.sort(reverse=True, key=lambda x: x[0])
     top_sentences = [sent[1] for sent in similarities[:2]]
-
-
     for sentence in top_sentences:
-        highlighted_chunk = chunk.replace(sentence, '**'+sentence+'**')
-    
-    return highlighted_chunk
+        chunk = chunk.replace(sentence, f'**{sentence}**')
+    return chunk
 
-
-# Extract and store PDF text once per upload
+# Load and store PDF text
 if uploaded_pdf and "pdf_text" not in st.session_state:
     st.session_state.pdf_text = extract_text_from_pdf(uploaded_pdf)
     st.success("✅ PDF uploaded and processed!")
 
-# Render past user and assistant messages
+# Render chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Main question-answering logic (appears after PDF is uploaded)
+# Form for auditing after PDF upload
 if uploaded_pdf:
-    # question = st.chat_input("Ask a question about the PDF...")
+    if "form_question" not in st.session_state:
+        st.session_state.form_question = ""
+    if "form_answer" not in st.session_state:
+        st.session_state.form_answer = ""
 
-    if uploaded_pdf:
-        # Initialize form inputs in session_state
-        if "form_question" not in st.session_state:
-            st.session_state.form_question = ""
-        if "form_answer" not in st.session_state:
-            st.session_state.form_answer = ""
+    with st.form(key="audit_form"):
+        question = st.text_input("🔍 What was the question you asked the model?", value=st.session_state.form_question, key="form_question")
+        model_answer = st.text_area("🧠 What answer did the model give?", value=st.session_state.form_answer, key="form_answer")
+        submitted = st.form_submit_button("Audit Answer")
 
-        with st.form(key="audit_form"):
-            question = st.text_input("🔍 What was the question you asked the model?", value=st.session_state.form_question, key="form_question")
-            model_answer = st.text_area("🧠 What answer did the model give?", value=st.session_state.form_answer, key="form_answer")
-            submitted = st.form_submit_button("Audit Answer")
+    if submitted and model_answer:
+        chunk, trust_score = find_best_chunk(question, model_answer, st.session_state.pdf_text)
+        highlighted = highlight_top_sentences(chunk, model_answer)
 
+        response_md = f"📘 **Most Relevant Passage:**\n\n{highlighted}"
+        trust_display = f"📊 Trust Score\n\n**{trust_score}%**"
+        warning_text = ""
+        if trust_score < 40:
+            warning_text = "⚠️ Low Trust Warning\nThe model's answer may not be well-supported by the document."
 
-        if submitted and model_answer:
-            st.session_state.messages.append({"role": "user", "content": f"Q: {question}\nA: {model_answer}"})
+        st.session_state.messages.append({
+            "role": "user",
+            "content": f"Q: {question}\nA: {model_answer}"
+        })
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": f"{response_md}\n\n{trust_display}\n\n{warning_text}"
+        })
 
-            chunk, trust_score = find_best_chunk(model_answer, st.session_state.pdf_text)
-            highlighted = highlight_top_sentences(chunk, model_answer)
-
-            response_md = f"📘 **Most Relevant Passage:**\n\n{highlighted}"
-
-            with st.chat_message("assistant"):
-                st.markdown(response_md)
-                st.metric(label="Trust Score", value=f"{trust_score}%")
-                if trust_score < 40:
-                    st.warning("⚠️ Low trust score. The model's answer may not be well-supported by the document.")
-
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": f"{response_md}\n\n📊 **Trust Score:** `{trust_score}%`"
-            })
-
-            st.rerun()
+        # Flag submission and rerun
+        st.session_state.submitted = True
+        st.rerun()
 
 
 else:

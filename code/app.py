@@ -1,4 +1,4 @@
-# AI Knowledge Auditor – MVP v2.2
+# AI Knowledge Auditor – MVP v2.5
 # A chatbot that audits answers from PDF content using combined question-answer similarity
 
 # app.py – at the very top, before anything else
@@ -75,18 +75,24 @@ if "summarizer" not in st.session_state:
     st.session_state.summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 # Combined similarity for chunk search
-def find_best_chunk(question, model_answer, context, window=600, overlap=150):
+def find_best_chunk(question, model_answer, context, topic_filter=None, window=1000, overlap=250):
     chunks = []
     for start in range(0, len(context), overlap):
         end = start+window
         chunks.append(context[start: end])
+    if topic_filter:
+        filtered_chunks = [chunk for chunk in chunks if topic_filter.lower() in chunk.lower()]
+        if not filtered_chunks:
+            filtered_chunks = chunks
+    else:
+        filtered_chunks = chunks
     question_emb = st.session_state.embed_model.encode([question])[0]
     answer_emb = st.session_state.embed_model.encode([model_answer])[0]
     combined_emb = (question_emb + answer_emb) / 2
-    chunk_embs = st.session_state.embed_model.encode(chunks)
+    chunk_embs = st.session_state.embed_model.encode(filtered_chunks)
     scores = cosine_similarity([combined_emb], chunk_embs)[0]
     best_index = int(np.argmax(scores))
-    best_chunk = chunks[best_index]
+    best_chunk = filtered_chunks[best_index]
     best_score = round(float(scores[best_index]) * 100, 2)
     return best_chunk, best_score
 
@@ -105,7 +111,7 @@ def highlight_top_sentences(chunk, model_answer):
 def summarize_chunk(chunk):
     try:
         summary = st.session_state.summarizer(chunk, max_length=120, min_length=30, do_sample=False)[0]['summary_text']
-        return summary
+        return summary.strip().replace("\n", " ")
     except Exception as e:
         return f"⚠️ Summary failed: {str(e)}"
 
@@ -130,10 +136,11 @@ if uploaded_pdf:
         question = st.text_input("🔍 What was the question you asked the model?", value=st.session_state.form_question, key="form_question")
         model_answer = st.text_area("🧠 What answer did the model give?", value=st.session_state.form_answer, key="form_answer")
         show_summary = st.checkbox("📝 Show summary of this chunk")
+        topic_filter = st.text_input("🔎 Optional Topic Filter (e.g., 'machine learning')", key="topic_filter")
         submitted = st.form_submit_button("Audit Answer")
 
     if submitted and model_answer:
-        chunk, trust_score = find_best_chunk(question, model_answer, st.session_state.pdf_text)
+        chunk, trust_score = find_best_chunk(question, model_answer, st.session_state.pdf_text, topic_filter=topic_filter)
         highlighted = highlight_top_sentences(chunk, model_answer)
         summary = summarize_chunk(chunk) if show_summary else None
 

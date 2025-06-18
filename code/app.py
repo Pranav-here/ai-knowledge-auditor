@@ -1,4 +1,4 @@
-# AI Knowledge Auditor – MVP v2.5
+# AI Knowledge Auditor – MVP v3
 # A chatbot that audits answers from PDF content using combined question-answer similarity
 
 # app.py – at the very top, before anything else
@@ -55,11 +55,18 @@ if "messages" not in st.session_state:
 
 # Upload PDF
 uploaded_pdf = st.file_uploader("📄 Upload a PDF", type=["pdf"])
+if uploaded_pdf and uploaded_pdf.size > 200 * 1024 *1024:
+    st.error("🚫 File too large. Please upload a PDF under 50 MB.")
+    uploaded_pdf = None
 
 # Extract text from PDF
 def extract_text_from_pdf(file):
     with fitz.open(stream=file.read(), filetype="pdf") as doc:
-        return "\n".join(page.get_text() for page in doc)
+        text = "\n".join(page.get_text() for page in doc)
+    if not text.strip():
+        st.error("⚠️ No text found in PDF. It may be a scanned document or image-based.")
+        return None
+    return text
 
 # Extract keywords (unused currently, but can help with extensions)
 def get_keywords(text):
@@ -75,7 +82,7 @@ if "summarizer" not in st.session_state:
     st.session_state.summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 # Combined similarity for chunk search
-def find_best_chunk(question, model_answer, context, topic_filter=None, window=1000, overlap=250):
+def find_best_chunk(question, model_answer, context, topic_filter=None, window=1500, overlap=400):
     chunks = []
     for start in range(0, len(context), overlap):
         end = start+window
@@ -117,13 +124,18 @@ def summarize_chunk(chunk):
 
 # Load and store PDF text
 if uploaded_pdf and "pdf_text" not in st.session_state:
-    st.session_state.pdf_text = extract_text_from_pdf(uploaded_pdf)
-    st.success("✅ PDF uploaded and processed!")
+    extracted = extract_text_from_pdf(uploaded_pdf)
+    if extracted:
+        st.session_state.pdf_text = extracted
+        st.success("✅ PDF uploaded and processed!")
 
 # Render chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        if msg["role"] == "user":
+            st.markdown(f"<div style='text-align:right'>{msg['content']}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(msg["content"])
 
 # Form for auditing after PDF upload
 if uploaded_pdf:
@@ -135,7 +147,8 @@ if uploaded_pdf:
     with st.form(key="audit_form"):
         question = st.text_input("🔍 What was the question you asked the model?", value=st.session_state.form_question, key="form_question")
         model_answer = st.text_area("🧠 What answer did the model give?", value=st.session_state.form_answer, key="form_answer")
-        show_summary = st.checkbox("📝 Show summary of this chunk")
+        with st.expander("⚙️ Advanced Options"):
+            show_summary = st.checkbox("📝 Show summary of this chunk")
         topic_filter = st.text_input("🔎 Optional Topic Filter (e.g., 'machine learning')", key="topic_filter")
         submitted = st.form_submit_button("Audit Answer")
 
@@ -149,9 +162,11 @@ if uploaded_pdf:
             response_md += f"\n\n📝 **Summary:**\n\n{summary}"
 
         trust_display = f"📊 Trust Score\n\n**{trust_score}%**"
+
         warning_text = ""
         if trust_score < 40:
             warning_text = "⚠️ Low Trust Warning\nThe model's answer may not be well-supported by the document."
+            st.markdown("""<small title="We convert cosine similarity (0–1) to percentage by multiplying with 100.">ℹ️ How is this score calculated?</small>""", unsafe_allow_html=True)
 
         st.session_state.messages.append({
             "role": "user",
@@ -161,6 +176,10 @@ if uploaded_pdf:
             "role": "assistant",
             "content": f"{response_md}\n\n{trust_display}\n\n{warning_text}"
         })
+        if st.button("🗑 Reset Chat"):
+            st.session_state.messages = []
+            st.rerun()
+
 
         st.session_state.reset_inputs = True
         st.session_state.submitted = True

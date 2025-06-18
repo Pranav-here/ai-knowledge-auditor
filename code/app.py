@@ -1,4 +1,4 @@
-# AI Knowledge Auditor – MVP v1.9
+# AI Knowledge Auditor – MVP v2
 # A chatbot that audits answers from PDF content using combined question-answer similarity
 
 import streamlit as st
@@ -10,6 +10,7 @@ from nltk.tokenize import word_tokenize
 from sentence_transformers import SentenceTransformer
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+from transformers import pipeline
 
 # Download NLTK resources
 nltk.download('punkt')
@@ -54,7 +55,10 @@ def get_keywords(text):
 
 # Load SentenceTransformer model once
 if "embed_model" not in st.session_state:
-    st.session_state.embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+    st.session_state.embed_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu").to("cpu")
+
+if "summarizer" not in st.session_state:
+    st.session_state.summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 # Combined similarity for chunk search
 def find_best_chunk(question, model_answer, context, window=500):
@@ -81,6 +85,13 @@ def highlight_top_sentences(chunk, model_answer):
         chunk = chunk.replace(sentence, f'**{sentence}**')
     return chunk
 
+def summarize_chunk(chunk):
+    try:
+        summary = st.session_state.summarizer(chunk, max_length=120, min_length=30, do_sample=False)[0]['summary_text']
+        return summary
+    except Exception as e:
+        return f"⚠️ Summary failed: {str(e)}"
+
 # Load and store PDF text
 if uploaded_pdf and "pdf_text" not in st.session_state:
     st.session_state.pdf_text = extract_text_from_pdf(uploaded_pdf)
@@ -104,8 +115,10 @@ if uploaded_pdf:
         submitted = st.form_submit_button("Audit Answer")
 
     if submitted and model_answer:
+        show_summary = st.checkbox("📝 Show summary of this chunk")
         chunk, trust_score = find_best_chunk(question, model_answer, st.session_state.pdf_text)
         highlighted = highlight_top_sentences(chunk, model_answer)
+        summary = summarize_chunk(chunk) if show_summary else None
 
         response_md = f"📘 **Most Relevant Passage:**\n\n{highlighted}"
         trust_display = f"📊 Trust Score\n\n**{trust_score}%**"

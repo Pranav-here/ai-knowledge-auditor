@@ -1,4 +1,4 @@
-# AI Knowledge Auditor – MVP v2.1
+# AI Knowledge Auditor – MVP v2.2
 # A chatbot that audits answers from PDF content using combined question-answer similarity
 
 # app.py – at the very top, before anything else
@@ -75,8 +75,11 @@ if "summarizer" not in st.session_state:
     st.session_state.summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 # Combined similarity for chunk search
-def find_best_chunk(question, model_answer, context, window=500):
-    chunks = [context[i:i+window] for i in range(0, len(context), window)]
+def find_best_chunk(question, model_answer, context, window=600, overlap=150):
+    chunks = []
+    for start in range(0, len(context), overlap):
+        end = start+window
+        chunks.append(context[start: end])
     question_emb = st.session_state.embed_model.encode([question])[0]
     answer_emb = st.session_state.embed_model.encode([model_answer])[0]
     combined_emb = (question_emb + answer_emb) / 2
@@ -126,15 +129,18 @@ if uploaded_pdf:
     with st.form(key="audit_form"):
         question = st.text_input("🔍 What was the question you asked the model?", value=st.session_state.form_question, key="form_question")
         model_answer = st.text_area("🧠 What answer did the model give?", value=st.session_state.form_answer, key="form_answer")
+        show_summary = st.checkbox("📝 Show summary of this chunk")
         submitted = st.form_submit_button("Audit Answer")
 
     if submitted and model_answer:
-        show_summary = st.checkbox("📝 Show summary of this chunk")
         chunk, trust_score = find_best_chunk(question, model_answer, st.session_state.pdf_text)
         highlighted = highlight_top_sentences(chunk, model_answer)
         summary = summarize_chunk(chunk) if show_summary else None
 
         response_md = f"📘 **Most Relevant Passage:**\n\n{highlighted}"
+        if show_summary and summary:
+            response_md += f"\n\n📝 **Summary:**\n\n{summary}"
+
         trust_display = f"📊 Trust Score\n\n**{trust_score}%**"
         warning_text = ""
         if trust_score < 40:
@@ -149,9 +155,10 @@ if uploaded_pdf:
             "content": f"{response_md}\n\n{trust_display}\n\n{warning_text}"
         })
 
-        # Flag submission and rerun
+        st.session_state.reset_inputs = True
         st.session_state.submitted = True
         st.rerun()
+
 
 
 else:

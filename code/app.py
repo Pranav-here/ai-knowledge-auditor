@@ -1,16 +1,30 @@
-# AI Knowledge Auditor – MVP v2
+# AI Knowledge Auditor – MVP v2.1
 # A chatbot that audits answers from PDF content using combined question-answer similarity
 
+# app.py – at the very top, before anything else
+import numpy as np
+import torch
+
+# --- Monkey-patch torch.Tensor.numpy to catch the RuntimeError ---
+_orig_tensor_numpy = torch.Tensor.numpy
+def _safe_tensor_numpy(self, *args, **kwargs):
+    try:
+        return _orig_tensor_numpy(self, *args, **kwargs)
+    except RuntimeError:
+        # fallback: convert to Python list
+        return self.tolist()
+
+torch.Tensor.numpy = _safe_tensor_numpy
+
 import streamlit as st
-import fitz  # PyMuPDF
-import nltk
-import re
+import fitz               # PyMuPDF
+import nltk, re
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-from sentence_transformers import SentenceTransformer
-import numpy as np
+from sentence_transformers import SentenceTransformer  # ② torch gets imported after NumPy
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import pipeline
+
 
 # Download NLTK resources
 nltk.download('punkt')

@@ -3,6 +3,8 @@
 AI Knowledge Auditor is a lightweight Streamlit application that checks how well an AI‑generated answer aligns with a source PDF.  
 It combines dense retrieval, cross‑encoder re‑ranking, and a simple heuristic blend to produce a confidence score and highlights the supporting passage.
 
+Live Demo: Will be out soon!
+
 ## Features
 
 * Drag‑and‑drop PDF upload  

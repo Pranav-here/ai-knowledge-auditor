@@ -31,3 +31,6 @@ Thumbs.db
 
 # Hugging Face model cache (optional)
 ~/.cache/huggingface/
+
+# data folder
+data/

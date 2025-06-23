@@ -19,7 +19,7 @@ def get_keywords(text):
     tokens = word_tokenize(text.lower())
     return [word for word in tokens if word.isalnum() and word not in stop_words]  # return non stopword alphanum tokens
 
-def chunk_text(text, window = 1500, overlap = 400):
+def chunk_text(text, window = 600, overlap = 200):
     chunks = []
     for start in range(0, len(text), overlap):
         end = start + window

@@ -55,6 +55,19 @@ def query_index(question, answer, embed_model, index, chunks, top_k=1):
     best_idx = I[0][0]
     # Cap and scale to get more natural scores
     raw_score = float(D[0][0])
-    best_score = round(min(1.0, max(0.0, raw_score)) * 100, 2)
-    # best_score = round((raw_score ** 1.3) * 100, 2)  # slight boost to higher scores
+    best_chunk = chunks[best_idx]
+    # Split into sentences
+    sentences = best_chunk.split(". ")
+    sent_embs  = embed_model.encode(sentences)
+    ans_emb    = embed_model.encode([answer.strip().split(".")[0]])[0]
+
+    # Take max similarity among sentences
+    sent_sims = (sent_embs @ ans_emb) / (
+        np.linalg.norm(sent_embs, axis=1) * np.linalg.norm(ans_emb)
+    )
+    local_max = float(sent_sims.max())
+
+    # Blend global & local for final trust score
+    blended = (raw_score * 0.4) + (local_max * 0.6)
+    best_score = round(blended * 100, 2)
     return chunks[best_idx], best_score

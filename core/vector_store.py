@@ -1,44 +1,38 @@
 # core/vector_store.py
-
 import os
 import faiss
 import pickle
-from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import torch
-from scipy.special import expit   # sigmoid
+from scipy.special import expit
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import CrossEncoder
 
-# --- Monkey-patch torch.Tensor.numpy to catch the RuntimeError ---
+# Reranker model
+RERANKER = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
+
+INDEX_PATH = "data/faiss_index/chunks.index"
+CHUNKS_PATH = "data/faiss_index/chunks.pkl"
+
+# Monkey-patch for torch.Tensor.numpy errors
 _orig_tensor_numpy = torch.Tensor.numpy
 def _safe_tensor_numpy(self, *args, **kwargs):
     try:
         return _orig_tensor_numpy(self, *args, **kwargs)
     except RuntimeError:
-        # fallback: convert to Python list
         return self.tolist()
-
 torch.Tensor.numpy = _safe_tensor_numpy
 
-from sentence_transformers import CrossEncoder
-RERANKER = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
-
-INDEX_PATH="data/faiss_index/chunks.index"
-CHUNKS_PATH="data/faiss_index/chunks.pkl"
-
-
 def build_and_save_index(chunks, embed_model):
-    os.makedirs("data/faiss_index", exist_ok=True)
-    embeddings = embed_model.encode(chunks, show_progress_bar = True)
-
+    os.makedirs(os.path.dirname(INDEX_PATH), exist_ok=True)
+    embeddings = embed_model.encode(chunks, show_progress_bar=True)
     dim = embeddings.shape[1]
     index = faiss.IndexFlatIP(dim)
-    norm_embs = embeddings /np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norm_embs = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
     index.add(norm_embs)
-
     faiss.write_index(index, INDEX_PATH)
     with open(CHUNKS_PATH, "wb") as f:
         pickle.dump(chunks, f)
-
 
 def load_index_and_chunks():
     if not os.path.exists(INDEX_PATH) or not os.path.exists(CHUNKS_PATH):
@@ -48,47 +42,39 @@ def load_index_and_chunks():
         chunks = pickle.load(f)
     return index, chunks
 
-
 def query_index(question, answer, embed_model, index, chunks, top_k=5):
+    # Combine question+answer embedding
     q_emb = embed_model.encode(question)[0]
     a_emb = embed_model.encode([answer])[0]
     combined = (q_emb + a_emb) / 2
     norm_combined = combined / np.linalg.norm(combined)
-
     # FAISS search
     D, I = index.search(np.array([norm_combined]), top_k)
-    top_k_idxs = I[0][:min(top_k, len(chunks))]
-    candidates = [chunks[i] for i in top_k_idxs]
-
-    # Rerank with raw scores
+    top_idxs = I[0][:min(len(chunks), top_k)]
+    candidates = [chunks[i] for i in top_idxs]
+    # Rerank with Cross-Encoder
     pair_inputs = [(answer, chunk) for chunk in candidates]
     rerank_scores = RERANKER.predict(pair_inputs, convert_to_numpy=True)
-    rerank_best = int(np.argmax(rerank_scores))
-    best_idx = top_k_idxs[rerank_best]
-    best_chunk = candidates[rerank_best]
-    rerank_raw = float(rerank_scores[rerank_best])
-    rerank_prob = expit(rerank_raw)  # sigmoid to get 0–1 score
-
-    # Local sim (sentence max)
+    best_rerank = int(np.argmax(rerank_scores))
+    best_chunk = candidates[best_rerank]
+    raw_rerank = float(rerank_scores[best_rerank])
+    rerank_prob = expit(raw_rerank)
+    # Local sentence-level sim
     sentences = best_chunk.split(". ")
     sent_embs = embed_model.encode(sentences)
-    ans_emb = embed_model.encode([answer.strip().split(".")[0]])[0]
-    sent_sims = (sent_embs @ ans_emb) / (
-        np.linalg.norm(sent_embs, axis=1) * np.linalg.norm(ans_emb)
+    ans_emb_short = embed_model.encode([answer.strip().split(".")[0]])[0]
+    sims = (sent_embs @ ans_emb_short) / (
+        np.linalg.norm(sent_embs, axis=1) * np.linalg.norm(ans_emb_short)
     )
-    local_max = float(sent_sims.max())
-
-    # Global sim
+    local_max = float(sims.max())
+    # Global FAISS score
     global_score = float(D[0][0])
-
-    # 🚨 Optional: Negation penalty
+    # Optional negation penalty
     if any(neg in best_chunk.lower() for neg in ["not", "no", "cannot", "never"]) and \
        any(affirm in answer.lower() for affirm in ["can", "allowed", "must", "yes"]):
         rerank_prob = max(rerank_prob - 0.40, 0.0)
-
-    # 🧠 Final blend
+    # Final blend
     blended = 0.1 * global_score + 0.2 * local_max + 0.7 * rerank_prob
     blended = max(min(blended, 1.0), 0.0)
     trust_score = round(blended * 100, 2)
-
-    return best_chunk, trust_score
+    return best_chunk, trust_score, global_score, local_max, rerank_prob

@@ -1,4 +1,4 @@
-# AI Knowledge Auditor – MVP v4.5
+# AI Knowledge Auditor – MVP v5
 # A chatbot that audits answers from PDF content using combined question-answer similarity
 
 # app.py
@@ -105,7 +105,7 @@ if "faiss_index" in st.session_state:
             except Exception as e:
                 summary = f"⚠️ Summary failed: {str(e)}"
 
-        label = "✅ Supported" if score >= 80 else "⚠️ Partial Support" if score >= 40 else "❌ Likely Hallucinated"
+        label = "✅ Supported" if score >= 75 else "⚠️ Partial Support" if score >= 40 else "❌ Likely Hallucinated"
         trust_display = f"📊 **Trust Score:** {score}%\n\n{label}"
         result = f"📘 **Relevant Chunk:**\n\n{highlighted}"
         if summary:

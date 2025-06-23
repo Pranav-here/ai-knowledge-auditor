@@ -6,6 +6,7 @@ import pickle
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import torch
+from scipy.special import expit   # sigmoid
 
 # --- Monkey-patch torch.Tensor.numpy to catch the RuntimeError ---
 _orig_tensor_numpy = torch.Tensor.numpy
@@ -17,6 +18,9 @@ def _safe_tensor_numpy(self, *args, **kwargs):
         return self.tolist()
 
 torch.Tensor.numpy = _safe_tensor_numpy
+
+from sentence_transformers import CrossEncoder
+RERANKER = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
 
 INDEX_PATH="data/faiss_index/chunks.index"
 CHUNKS_PATH="data/faiss_index/chunks.pkl"
@@ -45,29 +49,46 @@ def load_index_and_chunks():
     return index, chunks
 
 
-def query_index(question, answer, embed_model, index, chunks, top_k=1):
+def query_index(question, answer, embed_model, index, chunks, top_k=5):
     q_emb = embed_model.encode(question)[0]
     a_emb = embed_model.encode([answer])[0]
-    combined = (q_emb+a_emb)/2
-    norm_combined = combined/np.linalg.norm(combined)
+    combined = (q_emb + a_emb) / 2
+    norm_combined = combined / np.linalg.norm(combined)
 
+    # FAISS search
     D, I = index.search(np.array([norm_combined]), top_k)
-    best_idx = I[0][0]
-    # Cap and scale to get more natural scores
-    raw_score = float(D[0][0])
-    best_chunk = chunks[best_idx]
-    # Split into sentences
-    sentences = best_chunk.split(". ")
-    sent_embs  = embed_model.encode(sentences)
-    ans_emb    = embed_model.encode([answer.strip().split(".")[0]])[0]
+    top_k_idxs = I[0][:min(top_k, len(chunks))]
+    candidates = [chunks[i] for i in top_k_idxs]
 
-    # Take max similarity among sentences
+    # Rerank with raw scores
+    pair_inputs = [(answer, chunk) for chunk in candidates]
+    rerank_scores = RERANKER.predict(pair_inputs, convert_to_numpy=True)
+    rerank_best = int(np.argmax(rerank_scores))
+    best_idx = top_k_idxs[rerank_best]
+    best_chunk = candidates[rerank_best]
+    rerank_raw = float(rerank_scores[rerank_best])
+    rerank_prob = expit(rerank_raw)  # sigmoid to get 0–1 score
+
+    # Local sim (sentence max)
+    sentences = best_chunk.split(". ")
+    sent_embs = embed_model.encode(sentences)
+    ans_emb = embed_model.encode([answer.strip().split(".")[0]])[0]
     sent_sims = (sent_embs @ ans_emb) / (
         np.linalg.norm(sent_embs, axis=1) * np.linalg.norm(ans_emb)
     )
     local_max = float(sent_sims.max())
 
-    # Blend global & local for final trust score
-    blended = (raw_score * 0.4) + (local_max * 0.6)
-    best_score = round(blended * 100, 2)
-    return chunks[best_idx], best_score
+    # Global sim
+    global_score = float(D[0][0])
+
+    # 🚨 Optional: Negation penalty
+    if any(neg in best_chunk.lower() for neg in ["not", "no", "cannot", "never"]) and \
+       any(affirm in answer.lower() for affirm in ["can", "allowed", "must", "yes"]):
+        rerank_prob = max(rerank_prob - 0.40, 0.0)
+
+    # 🧠 Final blend
+    blended = 0.1 * global_score + 0.2 * local_max + 0.7 * rerank_prob
+    blended = max(min(blended, 1.0), 0.0)
+    trust_score = round(blended * 100, 2)
+
+    return best_chunk, trust_score

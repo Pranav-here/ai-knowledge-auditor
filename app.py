@@ -1,4 +1,4 @@
-# AI Knowledge Auditor – MVP v4
+# AI Knowledge Auditor – MVP v4.3
 # A chatbot that audits answers from PDF content using combined question-answer similarity
 
 # app.py
@@ -20,6 +20,7 @@ import streamlit as st
 from core.loader import extract_text_from_pdf, chunk_text
 from core.embedder import load_embedder, load_summarizer
 from core.auditor import find_best_chunk, highlight_top_sentences
+from core.vector_store import build_and_save_index, load_index_and_chunks, query_index
 
 # Configure page
 st.set_page_config(page_title="AI Knowledge Auditor", page_icon="🧠", layout="centered")
@@ -42,13 +43,21 @@ st.caption("Upload a PDF and audit AI-generated answers for accuracy and relevan
 
 # Load models once
 if "embed_model" not in st.session_state:
-    st.session_state.embed_model = load_embedder
+    st.session_state.embed_model = load_embedder()
+
 if "summarizer" not in st.session_state:
-    st.session_state.embed_model = load_summarizer
+    st.session_state.summarizer = load_summarizer()
+
 
 # Session state for chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "faiss_index" not in st.session_state:
+    index, chunks = load_index_and_chunks()
+    if index and chunks:
+        st.session_state.faiss_index = index
+        st.session_state.chunk_texts = chunks
 
 # Upload PDF
 uploaded_pdf = st.file_uploader("📄 Upload a PDF", type=["pdf"])
@@ -57,37 +66,38 @@ if uploaded_pdf and uploaded_pdf.size > 200 * 1024 *1024:
     uploaded_pdf = None
 
 # Load and store PDF text
-if uploaded_pdf and "pdf_text" not in st.session_state:
+if uploaded_pdf:
     text = extract_text_from_pdf(uploaded_pdf)
     if text:
-        st.session_state.pdf_text = text
-        st.session_state.chunks = chunk_text(text)
-        st.success("✅ PDF uploaded and processed!")
+        chunks = chunk_text(text)
+        build_and_save_index(chunks, st.session_state.embed_model)
+        st.session_state.faiss_index, st.session_state.chunk_texts = load_index_and_chunks()
+        st.success("✅ PDF uploaded and indexed!")
 
-# Render history
+# Render message history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-
-# Audit form
-if uploaded_pdf:
+# Audit Form
+if "faiss_index" in st.session_state:
     with st.form(key="audit_form"):
         question = st.text_input("🔍 Your question")
         model_answer = st.text_area("🧠 Model's answer")
         with st.expander("⚙️ Options"):
             show_summary = st.checkbox("📝 Show summary")
-        topic_filter = st.text_input("🔎 Topic filter (optional)")
         submitted = st.form_submit_button("Audit Answer")
 
     if submitted and model_answer:
-        chunk, score = find_best_chunk(
-            question, model_answer,
-            st.session_state.chunks,
+        chunk, score = query_index(
+            question,
+            model_answer,
             st.session_state.embed_model,
-            topic_filter=topic_filter
+            st.session_state.faiss_index,
+            st.session_state.chunk_texts
         )
         highlighted = highlight_top_sentences(chunk, model_answer, st.session_state.embed_model)
+
         summary = None
         if show_summary:
             try:

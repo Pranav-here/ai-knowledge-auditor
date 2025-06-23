@@ -1,69 +1,82 @@
-# 🧠 AI Knowledge Auditor
+# AI Knowledge Auditor
 
-**Trust & Traceability for LLM Answers**
+AI Knowledge Auditor is a lightweight Streamlit application that checks how well an AI‑generated answer aligns with a source PDF.  
+It combines dense retrieval, cross‑encoder re‑ranking, and a simple heuristic blend to produce a confidence score and highlights the supporting passage.
 
-## 🚀 Overview
+## Features
 
-**AI Knowledge Auditor** is a Streamlit-based tool that verifies how *truthful and grounded* a large language model’s answer is, using uploaded domain-specific documents. It runs an audit pipeline that retrieves evidence from your sources, compares them with the LLM’s output, and generates a **trust score**—highlighting mismatches and potential hallucinations.
+* Drag‑and‑drop PDF upload  
+* Automatic text extraction and adaptive chunking  
+* FAISS vector index built with `all‑mpnet‑base‑v2` embeddings  
+* Cross‑encoder re‑ranking (`ms‑marco‑MiniLM‑L‑6‑v2`) for sharper relevance judgment  
+* Sentence‑level highlighting of the best supporting lines  
+* Optional passage summarisation (DistilBART CNN‑12‑6)  
+* Clear Trust Score labelling: Supported, Partial Support, or Likely Hallucinated  
+* Chat‑style history with reset
 
-This isn't just another chatbot. It's an **LLM reliability tool** for high-stakes fields like **medicine, law, policy, and education**.
+## Quick start
 
-## 🎯 Problem Statement
+### 1. Clone the repository
 
-Modern LLMs (e.g., GPT, Mistral) are powerful but can **hallucinate**—confidently stating false or unverified information. This makes them risky to trust in scenarios where factual accuracy matters.
+```bash
+git clone https://github.com/your‑username/ai‑knowledge‑auditor.git
+cd ai‑knowledge‑auditor
+```
 
-This project tackles a key question:  
-> “How can we **audit** an LLM’s response to ensure it's *based on retrieved facts*, not fiction?”
+### 2. Create a virtual environment (recommended)
 
-## 🔍 What This Tool Does
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+```
 
-- Accepts **PDF documents** as ground truth (e.g., medical guidelines, legal papers)
-- Lets users **ask questions** based on the uploaded files
-- Uses a **RAG (Retrieval-Augmented Generation)** pipeline to fetch context from documents
-- Compares the **LLM-generated answer** against retrieved source chunks
-- Computes a **Trust Score** (0–100) and flags hallucinated or off-topic content
-- Shows a clean UI: **Question → Answer → Evidence → Trust Score → Highlights**
+### 3. Install dependencies
 
-## 🛠 Tech Stack
+```bash
+pip install -r requirements.txt
+```
 
-| Layer        | Tool/Lib                    |
-|--------------|-----------------------------|
-| Frontend     | Streamlit                   |
-| LLM          | Mistral-7B (HuggingFace)    |
-| Retrieval    | LangChain + FAISS           |
-| Embeddings   | Sentence Transformers       |
-| Comparison   | Cosine similarity + ROUGE   |
-| Optional     | LangChain Tracing, LLMonitor|
+### 4. Download NLTK data (first run only)
 
-## 💡 Key Features
+```python
+python - <<'PY'
+import nltk
+nltk.download("punkt")
+nltk.download("stopwords")
+PY
+```
 
-- 🔍 Upload & chunk PDFs into FAISS vector store
-- 💬 Ask natural language questions grounded in those docs
-- 🤖 LLM-generated answers with **trust analysis**
-- 🧠 Highlight hallucinated segments and off-topic fluff
-- 📄 Exportable PDF audit report (coming soon)
+### 5. Launch the app
 
-## 🎯 Use Cases
+```bash
+streamlit run app.py
+```
 
-- 🩺 Verifying AI medical advice
-- ⚖️ Auditing LLM-generated legal summaries
-- 📚 Educational tutors with real-time fact checks
-- 📊 Traceability layer for any LLM app
+Open the local URL shown in the terminal, upload a PDF, and start auditing.
 
-## 📦 Future Roadmap
+## Folder structure
 
-- [ ] Source citations + click-to-verify chunks  
-- [ ] Support for multi-model auditing (GPT vs Mistral)  
-- [ ] Domain-specific fine-tuning (e.g., healthcare)  
-- [ ] API access for external apps  
-- [ ] Chat history with trust evolution tracking  
+```
+.
+├── app.py
+├── core/
+│   ├── __init__.py
+│   ├── loader.py
+│   ├── embedder.py
+│   ├── vector_store.py
+│   └── auditor.py
+├── data/
+│   └── faiss_index/        # auto‑generated
+├── requirements.txt
+└── README.md
+```
 
-## 📌 Status
+## Tips
 
-> Alpha build – core RAG + trust scoring system in development. UI scaffold complete.  
-Targeting full MVP by mid-July 2025.
+* Large PDFs may take time to embed; progress is displayed in the terminal.  
+* The Trust Score is heuristic. Adjust the weighting blend in `core/vector_store.py` for different behaviour.  
+* If `faiss-cpu` fails to install on Apple Silicon or Windows, see the FAISS documentation for pre‑built wheels.
 
----
+## License
 
-**Demo, docs, and tutorials coming soon.**  
-Built by [Pranav Kuchibhotla](https://pranavkuchibhotla.com)
+This project is released under the MIT License.

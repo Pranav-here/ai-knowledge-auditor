@@ -1,3 +1,5 @@
+# core/loader.py
+
 import fitz # PyMuPDf
 import nltk
 from nltk.corpus import stopwords

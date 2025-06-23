@@ -8,11 +8,17 @@ Live Demo: Will be out soon!
 ## Features
 
 * Drag‑and‑drop PDF upload  
+* File‑hash-based caching to avoid re‑indexing unchanged PDFs  
+* Indexing progress spinner for large documents  
 * Automatic text extraction and adaptive chunking  
 * FAISS vector index built with `all‑mpnet‑base‑v2` embeddings  
 * Cross‑encoder re‑ranking (`ms‑marco‑MiniLM‑L‑6‑v2`) for sharper relevance judgment  
 * Sentence‑level highlighting of the best supporting lines  
 * Optional passage summarisation (DistilBART CNN‑12‑6)  
+* Advanced scoring breakdown:  
+  - Global similarity  
+  - Local similarity  
+  - Rerank probability  
 * Clear Trust Score labelling: Supported, Partial Support, or Likely Hallucinated  
 * Chat‑style history with reset
 
@@ -29,7 +35,10 @@ cd ai‑knowledge‑auditor
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+# Windows
+.venv\Scripts\activate
 ```
 
 ### 3. Install dependencies
@@ -40,7 +49,7 @@ pip install -r requirements.txt
 
 ### 4. Download NLTK data (first run only)
 
-```python
+```bash
 python - <<'PY'
 import nltk
 nltk.download("punkt")
@@ -62,7 +71,6 @@ Open the local URL shown in the terminal, upload a PDF, and start auditing.
 .
 ├── app.py
 ├── core/
-│   ├── __init__.py
 │   ├── loader.py
 │   ├── embedder.py
 │   ├── vector_store.py
@@ -70,14 +78,14 @@ Open the local URL shown in the terminal, upload a PDF, and start auditing.
 ├── data/
 │   └── faiss_index/        # auto‑generated
 ├── requirements.txt
-└── README.md
+└── README.md              # this file
 ```
 
 ## Tips
 
-* Large PDFs may take time to embed; progress is displayed in the terminal.  
-* The Trust Score is heuristic. Adjust the weighting blend in `core/vector_store.py` for different behaviour.  
-* If `faiss-cpu` fails to install on Apple Silicon or Windows, see the FAISS documentation for pre‑built wheels.
+* Large PDFs may take time to embed; a spinner indicates progress.  
+* The Trust Score is heuristic; adjust the weighting blend in `core/vector_store.py` for custom behavior.  
+* If `faiss-cpu` fails on Apple Silicon or Windows, check FAISS documentation for compatible wheels.
 
 ## License
 

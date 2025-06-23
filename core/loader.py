@@ -10,7 +10,7 @@ nltk.download('stopwords')
 
 def extract_text_from_pdf(file):
     with fitz.open(stream=file.read(), filetype='pdf') as doc:
-        text = "\n".join(page.get_next() for page in doc)
+        text = "\n".join(page.get_text() for page in doc)
     return text if text.strip() else None  # return if not empty string
 
 

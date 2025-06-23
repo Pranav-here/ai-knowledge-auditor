@@ -19,7 +19,7 @@ It combines dense retrieval, cross‑encoder re‑ranking, and a simple heuristi
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your‑username/ai‑knowledge‑auditor.git
+git clone https://github.com/pranav-here/ai‑knowledge‑auditor.git
 cd ai‑knowledge‑auditor
 ```
 

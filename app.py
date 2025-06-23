@@ -1,7 +1,7 @@
-# AI Knowledge Auditor – MVP v3
+# AI Knowledge Auditor – MVP v4
 # A chatbot that audits answers from PDF content using combined question-answer similarity
 
-# app.py – at the very top, before anything else
+# app.py
 import numpy as np
 import torch
 
@@ -17,18 +17,9 @@ def _safe_tensor_numpy(self, *args, **kwargs):
 torch.Tensor.numpy = _safe_tensor_numpy
 
 import streamlit as st
-import fitz               # PyMuPDF
-import nltk, re
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from sentence_transformers import SentenceTransformer  # ② torch gets imported after NumPy
-from sklearn.metrics.pairwise import cosine_similarity
-from transformers import pipeline
-
-
-# Download NLTK resources
-nltk.download('punkt')
-nltk.download('stopwords')
+from core.loader import extract_text_from_pdf, chunk_text
+from core.embedder import load_embedder, load_summarizer
+from core.auditor import find_best_chunk, highlight_top_sentences
 
 # Configure page
 st.set_page_config(page_title="AI Knowledge Auditor", page_icon="🧠", layout="centered")
@@ -49,6 +40,12 @@ with st.sidebar:
 st.title("🧠 AI Knowledge Auditor")
 st.caption("Upload a PDF and audit AI-generated answers for accuracy and relevance.")
 
+# Load models once
+if "embed_model" not in st.session_state:
+    st.session_state.embed_model = load_embedder
+if "summarizer" not in st.session_state:
+    st.session_state.embed_model = load_summarizer
+
 # Session state for chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -56,136 +53,61 @@ if "messages" not in st.session_state:
 # Upload PDF
 uploaded_pdf = st.file_uploader("📄 Upload a PDF", type=["pdf"])
 if uploaded_pdf and uploaded_pdf.size > 200 * 1024 *1024:
-    st.error("🚫 File too large. Please upload a PDF under 50 MB.")
+    st.error("🚫 File too large. Please upload a PDF under 200 MB.")
     uploaded_pdf = None
-
-# Extract text from PDF
-def extract_text_from_pdf(file):
-    with fitz.open(stream=file.read(), filetype="pdf") as doc:
-        text = "\n".join(page.get_text() for page in doc)
-    if not text.strip():
-        st.error("⚠️ No text found in PDF. It may be a scanned document or image-based.")
-        return None
-    return text
-
-# Extract keywords (unused currently, but can help with extensions)
-def get_keywords(text):
-    stop_words = set(stopwords.words("english"))
-    tokens = word_tokenize(text.lower())
-    return [word for word in tokens if word.isalnum() and word not in stop_words]
-
-# Load SentenceTransformer model once
-if "embed_model" not in st.session_state:
-    st.session_state.embed_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu").to("cpu")
-
-if "summarizer" not in st.session_state:
-    st.session_state.summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
-
-# Combined similarity for chunk search
-def find_best_chunk(question, model_answer, context, topic_filter=None, window=1500, overlap=400):
-    chunks = []
-    for start in range(0, len(context), overlap):
-        end = start+window
-        chunks.append(context[start: end])
-    if topic_filter:
-        filtered_chunks = [chunk for chunk in chunks if topic_filter.lower() in chunk.lower()]
-        if not filtered_chunks:
-            filtered_chunks = chunks
-    else:
-        filtered_chunks = chunks
-    question_emb = st.session_state.embed_model.encode([question])[0]
-    answer_emb = st.session_state.embed_model.encode([model_answer])[0]
-    combined_emb = (question_emb + answer_emb) / 2
-    chunk_embs = st.session_state.embed_model.encode(filtered_chunks)
-    scores = cosine_similarity([combined_emb], chunk_embs)[0]
-    best_index = int(np.argmax(scores))
-    best_chunk = filtered_chunks[best_index]
-    best_score = round(float(scores[best_index]) * 100, 2)
-    return best_chunk, best_score
-
-# Highlight top 2 semantically relevant sentences
-def highlight_top_sentences(chunk, model_answer):
-    sentences = nltk.sent_tokenize(chunk)
-    sentence_embeddings = st.session_state.embed_model.encode(sentences)
-    answer_emb = st.session_state.embed_model.encode([model_answer])[0]
-    similarities = [(cosine_similarity([answer_emb], [sent_emb])[0][0], sent) for sent_emb, sent in zip(sentence_embeddings, sentences)]
-    similarities.sort(reverse=True, key=lambda x: x[0])
-    top_sentences = [sent[1] for sent in similarities[:2]]
-    for sentence in top_sentences:
-        chunk = chunk.replace(sentence, f'**{sentence}**')
-    return chunk
-
-def summarize_chunk(chunk):
-    try:
-        summary = st.session_state.summarizer(chunk, max_length=120, min_length=30, do_sample=False)[0]['summary_text']
-        return summary.strip().replace("\n", " ")
-    except Exception as e:
-        return f"⚠️ Summary failed: {str(e)}"
 
 # Load and store PDF text
 if uploaded_pdf and "pdf_text" not in st.session_state:
-    extracted = extract_text_from_pdf(uploaded_pdf)
-    if extracted:
-        st.session_state.pdf_text = extracted
+    text = extract_text_from_pdf(uploaded_pdf)
+    if text:
+        st.session_state.pdf_text = text
+        st.session_state.chunks = chunk_text(text)
         st.success("✅ PDF uploaded and processed!")
 
-# Render chat history
+# Render history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        if msg["role"] == "user":
-            st.markdown(f"<div style='text-align:right'>{msg['content']}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(msg["content"])
+        st.markdown(msg["content"])
 
-# Form for auditing after PDF upload
+
+# Audit form
 if uploaded_pdf:
-    if "form_question" not in st.session_state:
-        st.session_state.form_question = ""
-    if "form_answer" not in st.session_state:
-        st.session_state.form_answer = ""
-
     with st.form(key="audit_form"):
-        question = st.text_input("🔍 What was the question you asked the model?", value=st.session_state.form_question, key="form_question")
-        model_answer = st.text_area("🧠 What answer did the model give?", value=st.session_state.form_answer, key="form_answer")
-        with st.expander("⚙️ Advanced Options"):
-            show_summary = st.checkbox("📝 Show summary of this chunk")
-        topic_filter = st.text_input("🔎 Optional Topic Filter (e.g., 'machine learning')", key="topic_filter")
+        question = st.text_input("🔍 Your question")
+        model_answer = st.text_area("🧠 Model's answer")
+        with st.expander("⚙️ Options"):
+            show_summary = st.checkbox("📝 Show summary")
+        topic_filter = st.text_input("🔎 Topic filter (optional)")
         submitted = st.form_submit_button("Audit Answer")
 
     if submitted and model_answer:
-        chunk, trust_score = find_best_chunk(question, model_answer, st.session_state.pdf_text, topic_filter=topic_filter)
-        highlighted = highlight_top_sentences(chunk, model_answer)
-        summary = summarize_chunk(chunk) if show_summary else None
+        chunk, score = find_best_chunk(
+            question, model_answer,
+            st.session_state.chunks,
+            st.session_state.embed_model,
+            topic_filter=topic_filter
+        )
+        highlighted = highlight_top_sentences(chunk, model_answer, st.session_state.embed_model)
+        summary = None
+        if show_summary:
+            try:
+                summary = st.session_state.summarizer(chunk, max_length=120, min_length=30)[0]['summary_text']
+            except Exception as e:
+                summary = f"⚠️ Summary failed: {str(e)}"
 
-        response_md = f"📘 **Most Relevant Passage:**\n\n{highlighted}"
-        if show_summary and summary:
-            response_md += f"\n\n📝 **Summary:**\n\n{summary}"
+        trust_display = f"📊 **Trust Score:** {score}%"
+        result = f"📘 **Relevant Chunk:**\n\n{highlighted}"
+        if summary:
+            result += f"\n\n📝 **Summary:**\n\n{summary}"
+        if score < 40:
+            result += "\n\n⚠️ **Low Trust:** Model answer may not be well-supported."
 
-        trust_display = f"📊 Trust Score\n\n**{trust_score}%**"
-
-        warning_text = ""
-        if trust_score < 40:
-            warning_text = "⚠️ Low Trust Warning\nThe model's answer may not be well-supported by the document."
-            st.markdown("""<small title="We convert cosine similarity (0–1) to percentage by multiplying with 100.">ℹ️ How is this score calculated?</small>""", unsafe_allow_html=True)
-
-        st.session_state.messages.append({
-            "role": "user",
-            "content": f"Q: {question}\nA: {model_answer}"
-        })
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": f"{response_md}\n\n{trust_display}\n\n{warning_text}"
-        })
-        if st.button("🗑 Reset Chat"):
-            st.session_state.messages = []
-            st.rerun()
-
-
-        st.session_state.reset_inputs = True
-        st.session_state.submitted = True
+        st.session_state.messages.append({"role": "user", "content": f"**Q:** {question}\n**A:** {model_answer}"})
+        st.session_state.messages.append({"role": "assistant", "content": f"{result}\n\n{trust_display}"})
         st.rerun()
 
-
-
+    if st.button("🗑 Reset Chat"):
+        st.session_state.messages = []
+        st.rerun()
 else:
-    st.info("📌 Upload a PDF to get started.")
+    st.info("📌 Upload a PDF to begin.")

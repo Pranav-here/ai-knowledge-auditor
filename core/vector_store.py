@@ -53,5 +53,8 @@ def query_index(question, answer, embed_model, index, chunks, top_k=1):
 
     D, I = index.search(np.array([norm_combined]), top_k)
     best_idx = I[0][0]
-    best_score = round(float(D[0][0]) * 100, 2)
+    # Cap and scale to get more natural scores
+    raw_score = float(D[0][0])
+    best_score = round(min(1.0, max(0.0, raw_score)) * 100, 2)
+    # best_score = round((raw_score ** 1.3) * 100, 2)  # slight boost to higher scores
     return chunks[best_idx], best_score

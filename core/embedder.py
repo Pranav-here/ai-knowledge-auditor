@@ -29,6 +29,8 @@
 #         # If it can’t find the model in cache, just disable summarization
 #         print("⚠️ Summarizer unavailable:", e)
 #         return None
+# core/embedder.py
+
 from sentence_transformers import SentenceTransformer
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
@@ -41,12 +43,17 @@ def load_embedder():
     ).to("cpu")
 
 def load_summarizer():
-    # Return a function that takes text & returns a summary
+    """
+    Returns a function: summarize(text, max_length, min_length) -> [summary_str]
+    Uses LexRank to pick the top 2 sentences.
+    """
     def summarize(text, max_length=120, min_length=30):
-        # We'll ignore max/min length and just pick 2 sentences
+        # parse the raw chunk
         parser = PlaintextParser.from_string(text, Tokenizer("english"))
         summarizer = LexRankSummarizer()
-        summary = summarizer(parser.document, sentences_count=2)
-        # Join sentences back into one string
-        return [" ".join(str(sentence) for sentence in summary)]
+        # extract the 2 most “central” sentences
+        summary_sents = summarizer(parser.document, sentences_count=2)
+        # join them into one string
+        joined = " ".join(str(sentence) for sentence in summary_sents)
+        return [joined]
     return summarize

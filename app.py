@@ -89,39 +89,18 @@ if st.session_state.get("faiss_index"):
     with st.form("audit_form"):
         question = st.text_input("🔍 Your question")
         model_answer = st.text_area("🧠 Model's answer")
+
+        # Show summary checkbox, but disable with message if summarizer is not available
         show_summary = st.checkbox(
-            "📝 Show summary",
-            disabled=(st.session_state.summarizer is None)
-        )
+    "📝 Show summary",
+    value=False,
+    disabled=True,
+    help="🔒 Summarization is currently unavailable."
+)
+
+
         submitted = st.form_submit_button("Audit Answer")
 
-    # if submitted and model_answer:
-    #     # Get best chunk and similarity scores
-    #     chunk, trust_score, global_sim, local_sim, rerank_prob = query_index(
-    #         question,
-    #         model_answer,
-    #         st.session_state.embed_model,
-    #         st.session_state.faiss_index,
-    #         st.session_state.chunk_texts
-    #     )
-    #     highlighted = highlight_top_sentences(chunk, model_answer, st.session_state.embed_model)
-
-    #     # Summarize if requested and available
-    #     summary = None
-    #     if show_summary and st.session_state.summarizer:
-    #         try:
-    #             summary = st.session_state.summarizer(chunk, max_length=120, min_length=30)[0]["summary_text"]
-    #         except Exception as e:
-    #             summary = f"⚠️ Summary failed: {e}"
-
-    #     # Trust label
-    #     if trust_score >= 75:
-    #         label = "✅ Supported"
-    #     elif trust_score >= 40:
-    #         label = "⚠️ Partial Support"
-    #     else:
-    #         label = "❌ Likely Hallucinated"
-    #     trust_display = f"📊 **Trust Score:** {trust_score}%  \n{label}"
     if submitted and model_answer:
         # Get best chunk and similarity scores
         chunk, trust_score, global_sim, local_sim, rerank_prob = query_index(
@@ -137,9 +116,7 @@ if st.session_state.get("faiss_index"):
         summary = None
         if show_summary and st.session_state.summarizer:
             try:
-                # Sumy’s summarize() returns a list of strings
                 summary_list = st.session_state.summarizer(chunk)
-                # Take the first summary string (or show a warning if empty)
                 summary = summary_list[0] if summary_list else "⚠️ No summary generated."
             except Exception as e:
                 summary = f"⚠️ Summary failed: {e}"
@@ -152,13 +129,6 @@ if st.session_state.get("faiss_index"):
         else:
             label = "❌ Likely Hallucinated"
         trust_display = f"📊 **Trust Score:** {trust_score}%  \n{label}"
-
-        # Build the assistant’s message
-        result = f"📘 **Relevant Chunk:**  \n{highlighted}"
-        if summary:
-            result += f"\n\n📝 **Summary:**  \n{summary}"
-        if trust_score < 40:
-            result += "\n\n⚠️ **Low Trust:** Model answer may not be well-supported."
 
         # Build the assistant’s message
         result = f"📘 **Relevant Chunk:**  \n{highlighted}"

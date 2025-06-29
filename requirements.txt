@@ -1,0 +1,12 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1+cpu
+numpy<2
+streamlit>=1.46.1
+sentence-transformers>=2.6.0
+transformers>=4.41.0
+faiss-cpu>=1.7.4
+PyMuPDF>=1.24.2
+scikit-learn>=1.5.0
+nltk>=3.8.1
+scipy>=1.13.0
+tqdm>=4.66.0

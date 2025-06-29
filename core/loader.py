@@ -20,32 +20,19 @@ def get_keywords(text):
     tokens = word_tokenize(text.lower())
     return [word for word in tokens if word.isalnum() and word not in stop_words]  # return non stopword alphanum tokens
 
-def chunk_text(
-    text: str,
-    *,                       # force keyword args
-    min_window: int = 120,   # tightest possible chunk
-    max_window: int = 400,   # loosest chunk before context gets fuzzy
-    target_chunks: int = 250 # how many chunks we’d like for an “average-sized” doc
-):
+def chunk_text(text: str, *, chunk_size: int = 500, overlap: int = 300):
     """
-    Auto-tunes chunk size & overlap based on document length.
-    • Short docs → smaller window, small overlap
-    • Long docs  → larger window, bigger overlap (to keep #chunks reasonable)
+    Splits text into fixed-size chunks of `chunk_size` characters,
+    overlapping by `overlap` characters to preserve context.
     """
-    doc_len = len(text)
-    if doc_len == 0:
+    if not text:
         return []
 
-    # 1) Pick a window so (#chunks ≈ target_chunks) but clamp between min & max.
-    window = int(doc_len / target_chunks)
-    window = min(max(window, min_window), max_window)
-
-    # 2) Overlap = 20-30 % of window (heuristic)
-    overlap = max(int(window * 0.3), 50)
-
     chunks = []
-    for start in range(0, doc_len, window - overlap):
-        end = start + window
+    start = 0
+    doc_len = len(text)
+    while start < doc_len:
+        end = min(start + chunk_size, doc_len)
         chunks.append(text[start:end])
-
+        start += (chunk_size - overlap)
     return chunks

@@ -1,92 +1,54 @@
+![Python Version](https://img.shields.io/badge/python-3.8%2B-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
 # AI Knowledge Auditor
 
-AI Knowledge Auditor is a lightweight Streamlit application that checks how well an AI‑generated answer aligns with a source PDF.  
-It combines dense retrieval, cross‑encoder re‑ranking, and a simple heuristic blend to produce a confidence score and highlights the supporting passage.
+AI Knowledge Auditor is a lightweight auditing tool for evaluating AI-generated answers against authoritative PDF sources. By combining dense retrieval with FAISS, cross-encoder re-ranking, and sentence-level analysis, it produces a clear confidence score and highlights the most relevant passages.
 
-Live Demo: Will be out soon!
+## Live Demo
+A hosted version is available at:
 
-## Features
+https://share.streamlit.io/pranav-here/ai-knowledge-auditor/app.py
 
-* Drag‑and‑drop PDF upload  
-* File‑hash-based caching to avoid re‑indexing unchanged PDFs  
-* Indexing progress spinner for large documents  
-* Automatic text extraction and adaptive chunking  
-* FAISS vector index built with `all‑mpnet‑base‑v2` embeddings  
-* Cross‑encoder re‑ranking (`ms‑marco‑MiniLM‑L‑6‑v2`) for sharper relevance judgment  
-* Sentence‑level highlighting of the best supporting lines  
-* Optional passage summarisation (DistilBART CNN‑12‑6)  
-* Advanced scoring breakdown:  
-  - Global similarity  
-  - Local similarity  
-  - Rerank probability  
-* Clear Trust Score labelling: Supported, Partial Support, or Likely Hallucinated  
-* Chat‑style history with reset
+## Key Features
 
-## Quick start
+- **Adaptive PDF Processing**: Automatically extracts text from any PDF, splits content into optimally sized chunks, and caches embeddings by file hash to avoid repeated indexing.
+- **Dense Retrieval with FAISS**: Builds a vector index using `sentence-transformers/all-mpnet-base-v2` embeddings to retrieve globally relevant chunks based on combined question-and-answer vectors.
+- **Cross-Encoder Re-Ranking**: Uses `cross-encoder/ms-marco-MiniLM-L-6-v2` to refine initial FAISS results, improving precision by scoring answer–chunk pairs directly.
+- **Local Sentence Highlighting**: Computes sentence-level similarity to emphasize the two most relevant sentences within the best chunk.
+- **Optional Summarization**: Offers concise summaries of the chosen passage via `sshleifer/distilbart-cnn-12-6` for quick context.
+- **Trust Score Breakdown**:
+  - **Global Similarity**: Measures broad alignment between question+answer and chunk using FAISS inner product.
+  - **Local Similarity**: Captures sentence-level relevance, ensuring key details are present.
+  - **Re-Rank Probability**: Cross-encoder score normalized to [0,1], bringing fine-grained semantic judgment.
+- **Heuristic Blending**: Combines the three metrics (0.1×global + 0.2×local + 0.7×rereank) into a single percentage score, with labels:
+  - Supported (≥75%)
+  - Partial Support (40–75%)
+  - Likely Hallucinated (<40%)
+- **Chat-Style Interface**: Maintains question–answer history with reset capability for iterative auditing sessions.
 
-### 1. Clone the repository
+## Architecture Overview
 
-```bash
-git clone https://github.com/pranav-here/ai‑knowledge‑auditor.git
-cd ai‑knowledge‑auditor
-```
+1. **PDF Loader**: Uses PyMuPDF to extract raw text, then applies adaptive chunking based on document length.
+2. **Embedder**: Loads a dual-model pipeline:
+   - SentenceTransformer for chunk embeddings
+   - CrossEncoder for pairwise relevance re-ranking
+3. **Vector Store**: Constructs a FAISS index of normalized chunk embeddings to efficiently retrieve top candidates.
+4. **Query Pipeline**:
+   - Encode question and answer separately, average their vectors, normalize, and query FAISS.
+   - Re-rank top-K chunks with the CrossEncoder to select the single best passage.
+   - Compute local sentence similarities for highlighting.
+   - Apply optional negation penalty to correct false affirmations.
+   - Blend metrics into a unified Trust Score.
+5. **User Interface**: Streamlit front end provides file upload, form fields for question and model answer, scoring display, and interactive history.
 
-### 2. Create a virtual environment (recommended)
+## Why This Approach Works
 
-```bash
-python -m venv .venv
-# macOS / Linux
-source .venv/bin/activate
-# Windows
-.venv\Scripts\activate
-```
+- **Global Retrieval** quickly narrows down to broadly relevant sections, ensuring coverage of the overall context.
+- **Re-Ranking** refines the initial hits by directly comparing the AI answer to each passage, boosting precision and minimizing irrelevant chunks.
+- **Local Similarity** ensures that the final output isn’t just topically related but contains the exact details needed to support or refute the answer.
 
-### 3. Install dependencies
+The combination of these layers delivers a robust yet efficient auditing workflow suitable for documents of any size. Custom weighting in `core/vector_store.py` can be adjusted for different trade-offs between breadth and precision.
 
-```bash
-pip install -r requirements.txt
-```
+## Contribution and Feedback
 
-### 4. Download NLTK data (first run only)
-
-```bash
-python - <<'PY'
-import nltk
-nltk.download("punkt")
-nltk.download("stopwords")
-PY
-```
-
-### 5. Launch the app
-
-```bash
-streamlit run app.py
-```
-
-Open the local URL shown in the terminal, upload a PDF, and start auditing.
-
-## Folder structure
-
-```
-.
-├── app.py
-├── core/
-│   ├── loader.py
-│   ├── embedder.py
-│   ├── vector_store.py
-│   └── auditor.py
-├── data/
-│   └── faiss_index/        # auto‑generated
-├── requirements.txt
-└── README.md              # this file
-```
-
-## Tips
-
-* Large PDFs may take time to embed; a spinner indicates progress.  
-* The Trust Score is heuristic; adjust the weighting blend in `core/vector_store.py` for custom behavior.  
-* If `faiss-cpu` fails on Apple Silicon or Windows, check FAISS documentation for compatible wheels.
-
-## License
-
-This project is released under the MIT License.
+Contributions are welcome. Please open an issue or pull request for improvements, bug fixes, or feature requests.

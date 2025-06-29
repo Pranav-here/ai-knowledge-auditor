@@ -45,14 +45,14 @@ def load_embedder():
 def load_summarizer():
     """
     Returns a function: summarize(text, max_length, min_length) -> [summary_str]
-    Uses LexRank to pick the top 2 sentences.
+    Uses LexRank to pick the top 5 sentences.
     """
     def summarize(text, max_length=120, min_length=30):
         # parse the raw chunk
         parser = PlaintextParser.from_string(text, Tokenizer("english"))
         summarizer = LexRankSummarizer()
-        # extract the 2 most “central” sentences
-        summary_sents = summarizer(parser.document, sentences_count=2)
+        # extract the 5 most “central” sentences
+        summary_sents = summarizer(parser.document, sentences_count=5)
         # join them into one string
         joined = " ".join(str(sentence) for sentence in summary_sents)
         return [joined]

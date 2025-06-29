@@ -7,7 +7,7 @@ AI Knowledge Auditor is a lightweight auditing tool for evaluating AI-generated 
 ## Live Demo
 A hosted version is available at:
 
-https://share.streamlit.io/pranav-here/ai-knowledge-auditor/app.py
+[CHECK IT OUT](https://ai-knowledge-auditor.streamlit.app/)
 
 ## Key Features
 
